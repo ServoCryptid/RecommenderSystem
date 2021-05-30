@@ -15,14 +15,15 @@ import time
 
 def split_data(df):
     """
-    we'll use the leave-one-out methodology, using the last reviewd movie for each user in the test set
+    we'll use the leave-one-out methodology, using the last 3 reviewd movie for each user in the test set
     :param df: dataset to be splitted
     :return:
     """
 
+    ranks_test = list(range(1, 4))
     df['ranked_latest'] = df.groupby(['userId'])['timestamp'].rank(method='first', ascending=False)
-    train_df = df[df['ranked_latest'] != 1]
-    test_df = df[df['ranked_latest'] == 1]
+    train_df = df[df['ranked_latest'].isin(ranks_test)]
+    test_df = df[~df['ranked_latest'].isin(ranks_test)]
 
     train_df = train_df[['userId', 'movieId', 'rating']]
     test_df = test_df[['userId', 'movieId', 'rating']]
@@ -54,7 +55,7 @@ class MovieLensTrainDataset(Dataset):
 
         num_negatives = 10  #TODO: gridsearch the best value for this; tried also with 4
 
-        cnt=0
+        cnt = 0
 
         for (u, i) in (user_item_set):
             print(f"CNT: {cnt}/{len(user_item_set)}")
@@ -135,10 +136,7 @@ if __name__ == "__main__":
         r"C:\Users\laris\Documents\Github\pytorch-neat\neat\experiments\reco_sys\datasets\ml-latest-small\ratings.csv")  # we take the small dataset
     print(ratings.head())
     print(f"Ratings dimensions: {ratings.shape}")
-    print(ratings.info())
 
-    # we select only 30% of the users from the dataset => ~ 41.5k users
-    # percentage_users = 0.3
     percentage_users = 1
 
     rand_userIds = np.random.choice(ratings['userId'].unique(),
@@ -153,10 +151,6 @@ if __name__ == "__main__":
 
     train_ratings, test_ratings = split_data(ratings)
 
-  # now we have only positive interactions, we need to add "negative" ones too we sample from the unrated movies
-    # 4 * number ratings given by a user (for 1 rated movie we have 4 unrated movies)
-
-    print(train_ratings.sample(100))
     all_movieIds = ratings['movieId'].unique()
 
     num_users = ratings['userId'].max() + 1
@@ -183,23 +177,17 @@ if __name__ == "__main__":
     # Dict of all items that are interacted with by each user
     user_interacted_items = ratings.groupby('userId')['movieId'].apply(list).to_dict()
 
-    hits = []
-
     for (u, i) in test_user_item_set:
-        # interacted_items = user_interacted_items[u]
-        # not_interacted_items = set(all_movieIds) - set(interacted_items)
-        # selected_not_interacted = list(np.random.choice(list(not_interacted_items), 99))
-        # test_items = selected_not_interacted + [i]
-
-        # predicted_labels = np.squeeze(model(torch.tensor([u]*100),
-        #                                     torch.tensor(test_items)).detach().numpy())
-
         # predicted_labels = np.squeeze(saved_model(torch.tensor([u]*100),
         #                                     torch.tensor(test_items)).detach().numpy())
 
         predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
-                                            torch.tensor([i])).detach().numpy())
-        print(scaler.inverse_transform(predicted_labels.reshape(-1, 1)))
+                                                  torch.tensor([i])).detach().numpy())
+
+        print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))} "
+              f"real rating: "
+              f"{scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u)  & (test_ratings['movieId']==i)].values[0][2].reshape(-1, 1))}")
+
         # print(f"predicted labels: {scaler.inverse_transform(predicted_labels[np.argsort(-predicted_labels)].reshape(-1, 1))}")
         # print(f"Predicted ratings: {scaler.inverse_transform(predicted_labels[np.argsort(-predicted_labels)].reshape(-1, 1))[-10:-1]}")
         # break
