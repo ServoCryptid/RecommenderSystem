@@ -58,8 +58,8 @@ class MovieLensTrainDataset(Dataset):
         cnt = 0
 
         for (u, i) in (user_item_set):
-            print(f"CNT: {cnt}/{len(user_item_set)}")
-            cnt += 1
+            # print(f"CNT: {cnt}/{len(user_item_set)}")
+            # cnt += 1
             users.append(u)
             items.append(i)
             labels.append(ratings[(ratings['userId'] == u) & (ratings['movieId'] == i)].values[0][2])
@@ -178,9 +178,9 @@ if __name__ == "__main__":
         # predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
         #                                           torch.tensor([i])).detach().numpy())
 
-        print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0]} "
-              f"real rating: "
-              f"{scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u)  & (test_ratings['movieId']==i)].values[0][2].reshape(-1, 1))[0][0]}")
+        # print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0]} "
+        #       f"real rating: "
+        #       f"{scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u)  & (test_ratings['movieId']==i)].values[0][2].reshape(-1, 1))[0][0]}")
 
         pred_arr.append([u, i, format(scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0], '.3f'),
                          format(scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u) &
@@ -188,7 +188,9 @@ if __name__ == "__main__":
 
     pred_df = pd.DataFrame(data=pred_arr, columns=["userId", "movieId", "pred_rating", "real_rating"])
     pred_df.to_csv("predictions.csv", index=False)
-    
+
+    pred_df[["pred_rating", "real_rating"]] = pred_df[["pred_rating", "real_rating"]].astype(float)
+
     print(f"MAE test set : {(abs(pred_df['pred_rating']-pred_df['real_rating'])).sum()/len(pred_df)}")
 
     print(f"Execution time: {(time.time()-start)/60} mins")
