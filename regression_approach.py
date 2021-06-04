@@ -15,7 +15,7 @@ import time
 
 def split_data(df):
     """
-    we'll use the leave-one-out methodology, using the last 3 reviewd movie for each user in the test set
+    we'll use the leave-one-out methodology, using the last 3 reviewed movie for each user in the test set
     :param df: dataset to be splitted
     :return:
     """
@@ -97,7 +97,7 @@ class NCF(pl.LightningModule):
         item_embedded = self.item_embedding(item_input)
 
         #concat the 2 embedding layers
-        vector = torch.cat([user_embedded, item_embedded], dim=-1) # try with dot product also?
+        vector = torch.cat([user_embedded, item_embedded], dim=-1)  #TODO try with dot product also?
 
         vector = nn.ReLU()(self.fc1(vector))
         vector = nn.ReLU()(self.fc2(vector))
@@ -123,6 +123,7 @@ class NCF(pl.LightningModule):
 
 if __name__ == "__main__":
     np.random.seed(123)  # for reproducibility
+
     start = time.time()
 
     ratings = pd.read_csv(
@@ -153,7 +154,7 @@ if __name__ == "__main__":
 
     #train the model
     trainer = pl.Trainer(max_epochs=10, reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50, logger=False,
-                         callbacks=pl.callbacks.ModelCheckpoint(dirpath="./saved_models/"))  # took ~30 mins/epoch
+                         callbacks=pl.callbacks.ModelCheckpoint(dirpath="./saved_models/"))
 
     print("----training starting----")
     trainer.fit(model)
@@ -187,6 +188,7 @@ if __name__ == "__main__":
 
     pred_df = pd.DataFrame(data=pred_arr, columns=["userId", "movieId", "pred_rating", "real_rating"])
     pred_df.to_csv("predictions.csv", index=False)
+    
     print(f"MAE test set : {(abs(pred_df['pred_rating']-pred_df['real_rating'])).sum()/len(pred_df)}")
 
     print(f"Execution time: {(time.time()-start)/60} mins")
