@@ -36,11 +36,10 @@ class MovieLensTrainDataset(Dataset):
     """MovieLens Pytorch Dataset for Training
     Args:
         ratings(pd.DataFrame): Dataframe containing the movie ratings
-        all_movieIds (list): List containing all movieIds
     """
 
-    def __init__(self, ratings, all_movieIds):
-        self.users, self.items, self.labels = self.get_dataset(ratings, all_movieIds)
+    def __init__(self, ratings):
+        self.users, self.items, self.labels = self.get_dataset(ratings)
 
     def __len__(self):
         return len(self.users)
@@ -48,19 +47,13 @@ class MovieLensTrainDataset(Dataset):
     def __getitem__(self, idx):
         return self.users[idx], self.items[idx], self.labels[idx]
 
-    def get_dataset(self, ratings, all_movieIds):
+    def get_dataset(self, ratings):
 
         users, items, labels = [], [], []
 
         user_item_set = set(zip(ratings['userId'], ratings['movieId']))  # set of items that the user interacted with
 
-        num_negatives = 10  #TODO: gridsearch the best value for this; tried also with 4
-
-        cnt = 0
-
         for (u, i) in (user_item_set):
-            # print(f"CNT: {cnt}/{len(user_item_set)}")
-            # cnt += 1
             users.append(u)
             items.append(i)
             labels.append(ratings[(ratings['userId'] == u) & (ratings['movieId'] == i)].values[0][2])
@@ -112,13 +105,15 @@ class NCF(pl.LightningModule):
         predicted_labels = self(user_input, item_input)
         loss = nn.L1Loss()(predicted_labels, labels.view(-1, 1).float())
 
+        print(f"Training loss {loss}")
+
         return loss
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters())
 
     def train_dataloader(self):
-        return DataLoader(MovieLensTrainDataset(self.ratings, self.all_movieIds),
+        return DataLoader(MovieLensTrainDataset(self.ratings),
                           batch_size=32, num_workers=8)
 
 
@@ -127,8 +122,9 @@ if __name__ == "__main__":
 
     start = time.time()
 
+    # we take the small dataset #TODO: try with bigger ones
     ratings = pd.read_csv(
-        r"C:\Users\laris\Documents\Github\pytorch-neat\neat\experiments\reco_sys\datasets\ml-latest-small\ratings.csv")  # we take the small dataset
+        r"C:\Users\laris\Documents\Github\pytorch-neat\neat\experiments\reco_sys\datasets\ml-latest-small\ratings.csv")
     print(ratings.head())
     print(f"Ratings dimensions: {ratings.shape}")
 
@@ -155,17 +151,19 @@ if __name__ == "__main__":
     model = NCF(num_users, num_items, train_ratings, all_movieIds)
 
     #train the model
-    # trainer = pl.Trainer(max_epochs=epochs_to_train, reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50, logger=False,
-    #                      callbacks=pl.callbacks.ModelCheckpoint(dirpath="./saved_models/"))
-    #
-    # print("----training starting----")
-    # trainer.fit(model)
+    trainer = pl.Trainer(max_epochs=epochs_to_train, reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50,
+                         logger=False, callbacks=pl.callbacks.ModelCheckpoint(dirpath="./saved_models/", save_last=True))
+
+    print("----training starting----")
+    trainer.fit(model)
+
+    # save the model weights
     # torch.save(model.state_dict(), f'./saved_weights/weights_only_e{epochs_to_train}.pth')
-    # print("----end training----")
+    print("----end training----")
 
     # reload model
-    saved_model = NCF.load_from_checkpoint("./saved_models/epoch=9-step=359.ckpt")
-    saved_model.eval()
+    # saved_model = NCF.load_from_checkpoint("./saved_models/epoch=9-step=359.ckpt")
+    # saved_model.eval()
 
     #test the model
     # User-item pairs for testing
@@ -175,11 +173,12 @@ if __name__ == "__main__":
     user_interacted_items = ratings.groupby('userId')['movieId'].apply(list).to_dict()
 
     pred_arr = []
+
     for (u, i) in test_user_item_set:
-        # predicted_labels = np.squeeze(model(torch.tensor([u]),
-        #                                     torch.tensor([i])).detach().numpy())
-        predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
-                                                  torch.tensor([i])).detach().numpy())
+        predicted_labels = np.squeeze(model(torch.tensor([u]),
+                                            torch.tensor([i])).detach().numpy())
+        # predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
+        #                                           torch.tensor([i])).detach().numpy())
 
         # print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0]} "
         #       f"real rating: "
