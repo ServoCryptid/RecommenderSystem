@@ -10,6 +10,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import pytorch_lightning as pl
 from sklearn import preprocessing
+from sklearn.metrics import r2_score
 import time
 
 
@@ -97,12 +98,12 @@ class NCF(pl.LightningModule):
         item_embedded = self.item_embedding(item_input)
 
         #concat the 2 embedding layers
-        vector = torch.cat([user_embedded, item_embedded], dim=-1)  #TODO try with dot product also?
+        vector = torch.cat([user_embedded, item_embedded], dim=-1)  #TODO try with dot product also?; average the embeddings?
 
         vector = nn.ReLU()(self.fc1(vector))
         vector = nn.ReLU()(self.fc2(vector))
 
-        pred = nn.Sigmoid()(self.output(vector))
+        pred = nn.Sigmoid()(self.output(vector)) #TODO: Softmax and model the problem as a muticlass one?
 
         return pred
 
@@ -132,6 +133,7 @@ if __name__ == "__main__":
     print(f"Ratings dimensions: {ratings.shape}")
 
     percentage_users = 1
+    epochs_to_train = 2
 
     rand_userIds = np.random.choice(ratings['userId'].unique(),
                                     size=int(len(ratings['userId'].unique())*percentage_users))
@@ -153,16 +155,17 @@ if __name__ == "__main__":
     model = NCF(num_users, num_items, train_ratings, all_movieIds)
 
     #train the model
-    trainer = pl.Trainer(max_epochs=10, reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50, logger=False,
-                         callbacks=pl.callbacks.ModelCheckpoint(dirpath="./saved_models/"))
-
-    print("----training starting----")
-    trainer.fit(model)
-    print("----end training----")
+    # trainer = pl.Trainer(max_epochs=epochs_to_train, reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50, logger=False,
+    #                      callbacks=pl.callbacks.ModelCheckpoint(dirpath="./saved_models/"))
+    #
+    # print("----training starting----")
+    # trainer.fit(model)
+    # torch.save(model.state_dict(), f'./saved_weights/weights_only_e{epochs_to_train}.pth')
+    # print("----end training----")
 
     # reload model
-    # saved_model = NCF.load_from_checkpoint("./saved_models/epoch=19-step=28399_10_neg_samples.ckpt")
-    # saved_model.eval()
+    saved_model = NCF.load_from_checkpoint("./saved_models/epoch=9-step=359.ckpt")
+    saved_model.eval()
 
     #test the model
     # User-item pairs for testing
@@ -173,10 +176,10 @@ if __name__ == "__main__":
 
     pred_arr = []
     for (u, i) in test_user_item_set:
-        predicted_labels = np.squeeze(model(torch.tensor([u]),
-                                            torch.tensor([i])).detach().numpy())
-        # predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
-        #                                           torch.tensor([i])).detach().numpy())
+        # predicted_labels = np.squeeze(model(torch.tensor([u]),
+        #                                     torch.tensor([i])).detach().numpy())
+        predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
+                                                  torch.tensor([i])).detach().numpy())
 
         # print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0]} "
         #       f"real rating: "
@@ -192,5 +195,6 @@ if __name__ == "__main__":
     pred_df[["pred_rating", "real_rating"]] = pred_df[["pred_rating", "real_rating"]].astype(float)
 
     print(f"MAE test set : {(abs(pred_df['pred_rating']-pred_df['real_rating'])).sum()/len(pred_df)}")
+    print(f"R^2 test set : {r2_score(pred_df['real_rating'], pred_df['pred_rating'])}")
 
     print(f"Execution time: {(time.time()-start)/60} mins")
