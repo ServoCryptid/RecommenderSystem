@@ -13,20 +13,22 @@ from sklearn import preprocessing
 from sklearn.metrics import r2_score
 import time
 import json
+from tqdm import tqdm
 
 PARAMS = {'learning_rate': 0.001,
           'optimizer': 'Adam',
-          'epochs': 2}
+          'epochs': 2,
+          'embedding_size': [20, 50, 100, 150, 200]}
 
 
-def split_data(df):
+def split_data(df, number_reviews):
     """
     we'll use the leave-one-out methodology, using the last 3 reviewed movie for each user in the test set
     :param df: dataset to be splitted
     :return:
     """
 
-    ranks_test = list(range(1, 4))
+    ranks_test = list(range(1, number_reviews + 1))
     df['ranked_latest'] = df.groupby(['userId'])['timestamp'].rank(method='first', ascending=False)
     test_df = df[df['ranked_latest'].isin(ranks_test)]
     train_df = df[~df['ranked_latest'].isin(ranks_test)]
@@ -82,10 +84,9 @@ class NCF(pl.LightningModule):
             all_movieIds (list): List containing all movieIds (train + test)
     """
 
-    def __init__(self, scaler, num_users, num_items, ratings, all_movieIds):
+    def __init__(self, scaler, emb_dim, num_users, num_items, ratings, all_movieIds):
         super().__init__()
 
-        emb_dim = 100  #TODO: find the best value for it
         #TODO: add a bias to the embeddings?
         #TODO: add dropout?
         self.user_embedding = nn.Embedding(num_embeddings=num_users, embedding_dim=emb_dim)
@@ -176,62 +177,67 @@ if __name__ == "__main__":
     scaler = preprocessing.MinMaxScaler()
     ratings['rating'] = scaler.fit_transform(ratings[['rating']])
 
-    train_ratings, test_ratings = split_data(ratings)
+    train_ratings, test_ratings = split_data(ratings, 3)
 
     all_movieIds = ratings['movieId'].unique()
 
     num_users = ratings['userId'].max() + 1
     num_items = ratings['movieId'].max() + 1
 
-    model = NCF(scaler, num_users, num_items, train_ratings, all_movieIds)
+    for i in tqdm(range(5)):
+        model = NCF(scaler, PARAMS['embedding_size'][i], num_users, num_items, train_ratings, all_movieIds)
 
-    #train the model
-    trainer = pl.Trainer(max_epochs=PARAMS['epochs'], reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50,
-                         logger=neptune_logger, callbacks=[pl.callbacks.ModelCheckpoint(dirpath="./saved_models/"),
-                                                           EarlyStopping(monitor='val_loss')],
-                         check_val_every_n_epoch=1)
+        #train the model
+        trainer = pl.Trainer(max_epochs=PARAMS['epochs'], reload_dataloaders_every_epoch=True, progress_bar_refresh_rate=50,
+                             logger=neptune_logger, callbacks=[pl.callbacks.ModelCheckpoint(dirpath=f"./saved_models/embedding{PARAMS['embedding_size'][i]}"),
+                                                               EarlyStopping(monitor='val_loss')],
+                             check_val_every_n_epoch=1)
 
-    trainer.fit(model)
+        trainer.fit(model)
 
-    # save the model weights
-    # torch.save(model.state_dict(), f'./saved_weights/weights_only_e{epochs_to_train}.pth')
+        # save the model weights
+        torch.save(model.state_dict(), f'./saved_weights/weights_only_e{PARAMS["epochs"]}'
+                                       f'_emb_size{PARAMS["embedding_size"][i]}.pth')
 
-    # reload model
-    # saved_model = NCF.load_from_checkpoint("./saved_models/epoch=9-step=359.ckpt")
-    # saved_model.eval()
+        # reload model
+        # saved_model = NCF.load_from_checkpoint("./saved_models/epoch=9-step=359.ckpt")
+        # saved_model.eval()
 
-    #test the model
-    # User-item pairs for testing
-    test_user_item_set = set(zip(test_ratings['userId'], test_ratings['movieId']))
+        #test the model
+        # User-item pairs for testing
+        test_user_item_set = set(zip(test_ratings['userId'], test_ratings['movieId']))
 
-    # Dict of all items that are interacted with by each user
-    user_interacted_items = ratings.groupby('userId')['movieId'].apply(list).to_dict()
+        # Dict of all items that are interacted with by each user
+        user_interacted_items = ratings.groupby('userId')['movieId'].apply(list).to_dict()
 
-    pred_arr = []
+        pred_arr = []
 
-    for (u, i) in test_user_item_set:
-        predicted_labels = np.squeeze(model(torch.tensor([u]),
-                                            torch.tensor([i])).detach().numpy())
-        # predicted_labels = np.squeeze(saved_model(torch.tensor([u]),
-        #                                           torch.tensor([i])).detach().numpy())
+        for (u, i) in test_user_item_set:
+            predicted_labels = np.squeeze(model(torch.tensor([u]),
+                                                torch.tensor([i])).detach().numpy())
+            # print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0]} "
+            #       f"real rating: "
+            #       f"{scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u)  & (test_ratings['movieId']==i)].values[0][2].reshape(-1, 1))[0][0]}")
 
-        # print(f"{scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0]} "
-        #       f"real rating: "
-        #       f"{scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u)  & (test_ratings['movieId']==i)].values[0][2].reshape(-1, 1))[0][0]}")
+            # pred_arr.append([u, i, format(scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0], '.3f'),
+            #                  format(scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u) &
+            #                                                               (test_ratings['movieId'] == i)].values[0][2].reshape(-1, 1))[0][0], '.3f')])
+            pred_arr.append([u, i, format(predicted_labels.reshape(-1, 1)[0][0], '.3f'),
+                             format(test_ratings[(test_ratings['userId'] == u) &
+                                                                          (test_ratings['movieId'] == i)].values[0][2], '.3f'),
+                             format(scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0], '.3f'),
+                                              format(scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u) &
+                                                                                           (test_ratings['movieId'] == i)].
+                                                                              values[0][2].reshape(-1, 1))[0][0], '.3f')
+                             ])
 
-        # pred_arr.append([u, i, format(scaler.inverse_transform(predicted_labels.reshape(-1, 1))[0][0], '.3f'),
-        #                  format(scaler.inverse_transform(test_ratings[(test_ratings['userId'] == u) &
-        #                                                               (test_ratings['movieId'] == i)].values[0][2].reshape(-1, 1))[0][0], '.3f')])
-        pred_arr.append([u, i, format(predicted_labels.reshape(-1, 1)[0][0], '.3f'),
-                         format(test_ratings[(test_ratings['userId'] == u) &
-                                                                      (test_ratings['movieId'] == i)].values[0][2], '.3f')])
+        pred_df = pd.DataFrame(data=pred_arr, columns=["userId", "movieId", "pred_rating_scaled", "real_rating_scaled",
+                                                       "pred_rating", "real_rating"])
+        pred_df.to_csv("predictions.csv", index=False)
 
-    pred_df = pd.DataFrame(data=pred_arr, columns=["userId", "movieId", "pred_rating", "real_rating"])
-    pred_df.to_csv("predictions.csv", index=False)
+        pred_df[["pred_rating", "real_rating"]] = pred_df[["pred_rating", "real_rating"]].astype(float)
 
-    pred_df[["pred_rating", "real_rating"]] = pred_df[["pred_rating", "real_rating"]].astype(float)
+        print(f"MAE test set : {(abs(pred_df['pred_rating']-pred_df['real_rating'])).sum()/len(pred_df)}")
+        print(f"R^2 test set : {r2_score(pred_df['real_rating'], pred_df['pred_rating'])}")
 
-    print(f"MAE test set : {(abs(pred_df['pred_rating']-pred_df['real_rating'])).sum()/len(pred_df)}")
-    print(f"R^2 test set : {r2_score(pred_df['real_rating'], pred_df['pred_rating'])}")
-
-    print(f"Execution time: {(time.time()-start)/60} mins")
+        print(f"Execution time: {(time.time()-start)/60} mins")
