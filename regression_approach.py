@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 PARAMS = {'learning_rate': 0.001,
           'optimizer': 'Adam',
-          'epochs': 2,
+          'epochs': 25,
           'embedding_size': [20, 50, 100, 150, 200]}
 
 
@@ -91,7 +91,7 @@ class NCF(pl.LightningModule):
         #TODO: add dropout?
         self.user_embedding = nn.Embedding(num_embeddings=num_users, embedding_dim=emb_dim)
         self.item_embedding = nn.Embedding(num_embeddings=num_items, embedding_dim=emb_dim)
-        self.fc1 = nn.Linear(in_features=200, out_features=64)
+        self.fc1 = nn.Linear(in_features=emb_dim*2, out_features=64)
         self.fc2 = nn.Linear(in_features=64, out_features=32)
         self.output = nn.Linear(in_features=32, out_features=1)
         self.ratings = ratings
@@ -153,15 +153,10 @@ class NCF(pl.LightningModule):
 
 if __name__ == "__main__":
     np.random.seed(123)  # for reproducibility
-    start = time.time()
 
     with open('credentials_neptune.json') as json_file:
         data = json.load(json_file)
 
-    neptune_logger = NeptuneLogger(
-        api_key=data['api_key'],
-        project_name=data['project_name'],
-        params=PARAMS)
 
     # we take the small dataset #TODO: try with bigger ones
     ratings = pd.read_csv(
@@ -185,6 +180,13 @@ if __name__ == "__main__":
     num_items = ratings['movieId'].max() + 1
 
     for i in tqdm(range(5)):
+        start = time.time()
+
+        neptune_logger = NeptuneLogger(
+            api_key=data['api_key'],
+            project_name=data['project_name'],
+            params=PARAMS)
+
         model = NCF(scaler, PARAMS['embedding_size'][i], num_users, num_items, train_ratings, all_movieIds)
 
         #train the model
