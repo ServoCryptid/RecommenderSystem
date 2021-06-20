@@ -13,27 +13,6 @@ import time
 from sklearn import preprocessing
 from KaggleRS.regression_approach import NCF, split_data
 
-global A
-
-
-def compute_a(ratings_list):
-    '''
-    A as the maximum error of a recommendation system
-    in which its outputs fall within the range of valid rating values
-    :return: A
-    '''
-
-    sum = 0
-    for rating in ratings_list:
-        if rating > 0:
-            sum += max(float(rating), (1-float(rating)))  # we use 1 - instead of 5 - because the ratings are scaled
-                                                             # to be between (0, 1)
-
-    print(f"Value for A: {sum}")
-
-    return sum
-
-
 def process_input(): # CURRENTLY NOT USED; ONLY FOR INSPO
 
     '''
@@ -118,9 +97,10 @@ class RecoSysConfig:
     #workaround
     num_items = 193610
     num_users = 611
+    embed_dim = 100 #
 
-    model = NCF(scaler, num_users, num_items, train_ratings, all_movieIds)
-    model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e2.pth'))
+    model = NCF(scaler, embed_dim, num_users, num_items, train_ratings, all_movieIds)
+    model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e25_emb_size100.pth'))
 
     # reload pretrained embedding weights
     for name, param in model.named_parameters():
@@ -139,14 +119,15 @@ class RecoSysConfig:
     NUM_OUTPUTS = 1
     USE_BIAS = True
 
-    ACTIVATION = 'sigmoid' #TODO: try different activation fc
+    ACTIVATION = 'sigmoid'  # TODO: try different activation fc
     SCALE_ACTIVATION = 4.9
 
-    FITNESS_THRESHOLD = 1  #TODO: - a solution is defined as having a fitness <= this fitness threshold; is 1 for scaled ratings, 5 otherwise
+    FITNESS_THRESHOLD = 0.7 # TODO: - a solution is defined as having a fitness >= this fitness threshold;
+                        # is 1 for scaled ratings, 5 otherwise
 
-
-    POPULATION_SIZE = 150
-    NUMBER_OF_GENERATIONS = 150
+    sizes_to_try = [50, 100, 200, 500, 1000] #TODO: for pop and generations
+    POPULATION_SIZE = sizes_to_try[0]
+    NUMBER_OF_GENERATIONS = sizes_to_try[0]
     SPECIATION_THRESHOLD = 3.0
 
     CONNECTION_MUTATION_RATE = 0.80
@@ -166,10 +147,9 @@ class RecoSysConfig:
 
     targets = list(map(lambda x: autograd.Variable(torch.Tensor([x])), train_ratings['rating']))
 
-    A = compute_a(train_ratings['rating'])
 
     def fitness_fn(self, genome):
-        fitness = A
+        fitness = 1*len(self.inputs)
         phenotype = FeedForwardNet(genome, self)
 
         for input, target in zip(self.inputs, self.targets):
@@ -182,7 +162,7 @@ class RecoSysConfig:
             # print(f"LOSS: {loss}")
             fitness -= loss
 
-        return fitness
+        return fitness/len(self.inputs)
 
     def get_preds_and_labels(self, genome):
         phenotype = FeedForwardNet(genome, self)
