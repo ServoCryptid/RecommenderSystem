@@ -99,8 +99,12 @@ class Population:
             for genome in self.population:
                 self.speciate(genome, generation)
 
-            if best_genome.fitness <= self.Config.FITNESS_THRESHOLD:
+            if best_genome.fitness >= self.Config.FITNESS_THRESHOLD:
+                self.Config.get_preds_and_labels(best_genome)
                 return best_genome, generation
+
+            if not fitness_improved(num_gen_to_wait):
+                return None, None
 
             # Generation Stats
             if self.Config.VERBOSE:
@@ -186,3 +190,10 @@ class Population:
         ret = Population.__global_innovation_number
         Population.__global_innovation_number += 1
         return ret
+
+    def fitness_improved(num_gen_to_wait = 20):
+        '''
+        If fitness doesn't improve after a defined number of generations, end the process
+        :return: True/False
+        '''
+

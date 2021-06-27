@@ -40,6 +40,9 @@ def split_data(df, number_reviews):
     train_df = train_df.sample(frac=1).reset_index(drop=True)
     test_df = test_df.sample(frac=1).reset_index(drop=True)
 
+    # train_df.to_csv("train_dataset_used.csv", index=False)
+    # test_df.to_csv("test_dataset_used.csv", index=False)
+
     print(f"len test df: {len(test_df)}")
     return train_df, test_df
 
@@ -161,7 +164,7 @@ if __name__ == "__main__":
     # we take the small dataset #TODO: try with bigger ones
     ratings = pd.read_csv(
         r"C:\Users\laris\Documents\Github\pytorch-neat\neat\experiments\reco_sys\datasets\ml-latest-small\ratings.csv")
-    # print(ratings.head())
+    print(ratings.head())
     # print(f"Ratings dimensions: {ratings.shape}")
 
 
