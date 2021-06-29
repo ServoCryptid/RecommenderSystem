@@ -22,7 +22,6 @@ class Population:
 
     def __init__(self, config):
         self.Config = config()
-        # pool = Pool(processes=8)
         self.population = self.set_initial_population()
         print(f"initial population: {self.population}")
         self.species = []
@@ -105,13 +104,13 @@ class Population:
             for genome in self.population:
                 self.speciate(genome, generation)
 
-            if not self.fitness_improved(last_fitness):
+            if self.fitness_improved(last_fitness):
                 mae, r2 = self.Config.get_preds_and_labels(best_genome, generation)
-                # return best_genome, generation, mae, r2  # TODO: uncomment this if you want early stopping
                 acc_arr.append([generation, self.Config.NUMBER_OF_GENERATIONS, self.Config.POPULATION_SIZE,
                                 mae, r2, "yes", time.time()-start_time])
             else:
                 mae, r2 = self.Config.get_preds_and_labels(best_genome, generation)
+                # return best_genome, generation, mae, r2  # TODO: uncomment this if you want early stopping
                 acc_arr.append([generation, self.Config.NUMBER_OF_GENERATIONS, self.Config.POPULATION_SIZE,
                                 mae, r2, "no", time.time()-start_time])
 

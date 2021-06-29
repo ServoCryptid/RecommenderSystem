@@ -12,95 +12,47 @@ from sklearn.preprocessing import MultiLabelBinarizer
 import time
 from sklearn import preprocessing
 from KaggleRS.regression_approach import NCF, split_data
+from sklearn.metrics import r2_score
 
-def process_input(): # CURRENTLY NOT USED; ONLY FOR INSPO
 
+def get_inputs_from_csv(train_path):
     '''
-    transform the dataset in a specific way
-    #1 inspo: https://arxiv.org/pdf/1708.05031.pdf
+    get inputs from the already splittled dataset
+    :param train_path:
     :return:
     '''
-
-    FEATURE_COLUMNS = ['userId', 'movieId']
-    # ohe = OneHotEncoder(handle_unknown='ignore')
-    mlb = MultiLabelBinarizer(sparse_output=True)
-
-    train_df = pd.read_csv('experiments/reco_sys/datasets/ml-latest-small/splitted/100k_train.csv')
-    test_df = pd.read_csv('experiments/reco_sys/datasets/ml-latest-small/splitted/100k_test.csv')
-
-    train_ratings = train_df['rating'].values
-    test_ratings = test_df['rating'].values
-
-    print(train_df.head())
-    user_set = set(train_df['userId'].append(test_df['userId']))
-    print(len(user_set))
-    item_set = set(train_df['movieId'].append(test_df['movieId']))
-    print(len(item_set))
-
-    train_df = train_df.groupby(['userId'])['movieId'].apply(list).reset_index(name='movieId')
-    train_df = train_df.join(
-        pd.DataFrame.sparse.from_spmatrix(
-            mlb.fit_transform(train_df.pop('movieId')),
-            index=train_df.index,
-            columns=mlb.classes_))
-    print(train_df)
-
-    test_df = test_df.groupby(['userId'])['movieId'].apply(list).reset_index(name='movieId')
-    test_df = test_df.join(
-        pd.DataFrame.sparse.from_spmatrix(
-            mlb.fit_transform(test_df.pop('movieId')),
-            index=test_df.index,
-            columns=mlb.classes_
-        ))
-    print(test_df)
-
-
-    # X_train = ohe.fit_transform(train_df[FEATURE_COLUMNS])
-    # X_test = ohe.transform(test_df[FEATURE_COLUMNS])
-
-    return train_df, test_df, train_ratings, test_ratings, user_set, item_set
-
-
-def get_inputs():
     ratings = pd.read_csv(
-        r"C:\Users\laris\Documents\Github\pytorch-neat\neat\experiments\reco_sys\datasets\ml-latest-small\ratings.csv")  # we take the small dataset
-    # print(ratings.head())
-    # print(f"Ratings dimensions: {ratings.shape}")
+        r"C:\Users\laris\Documents\Github\pytorch-neat\neat\experiments\reco_sys\datasets\ml-latest-small\ratings.csv")  # we take the small dataset #TODO: delete this?
 
-    number_ratings = 100
-    ratings = ratings.sample(number_ratings)
+    train_ratings = pd.read_csv(train_path)
 
     #scale the ratings
     scaler = preprocessing.MinMaxScaler()
-    ratings['rating'] = scaler.fit_transform(ratings[['rating']])
+    train_ratings['rating'] = scaler.fit_transform(train_ratings[['rating']])
 
-    train_ratings, test_ratings = split_data(ratings, 1)
+    all_movieIds = train_ratings['movieId'].unique()
 
-    all_movieIds = ratings['movieId'].unique()
-
-    num_users = ratings['userId'].max() + 1
-    num_items = ratings['movieId'].max() + 1
+    num_users = train_ratings['userId'].max() + 1
+    num_items = train_ratings['movieId'].max() + 1
 
     return scaler, num_users, num_items, train_ratings, all_movieIds
 
 
 class RecoSysConfig:
-    global A
-
     np.random.seed(123)  # for reproducibility
 
     DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     VERBOSE = True
 
-    scaler, num_users, num_items, train_ratings, all_movieIds = get_inputs()
-
+    scaler, num_users, num_items, train_ratings, all_movieIds = get_inputs_from_csv(r"C:\Users\laris\PycharmProjects\KaggleRS\dataset\test_dataset_used.csv")
+    print(f"LEN TRAIN: {len(train_ratings)}")
     #workaround
     num_items = 193610
     num_users = 611
-    embed_dim = 100 #
+    embed_dim = 50  # current emb dim used
 
     model = NCF(scaler, embed_dim, num_users, num_items, train_ratings, all_movieIds)
-    model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e25_emb_size100.pth'))
+    model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e25_emb_size50.pth'))
 
     # reload pretrained embedding weights
     for name, param in model.named_parameters():
@@ -115,19 +67,16 @@ class RecoSysConfig:
             weight_item_emb = param.data
             embedding_item = nn.Embedding.from_pretrained(weight_item_emb)
 
-    NUM_INPUTS = 200
+    NUM_INPUTS = 100
     NUM_OUTPUTS = 1
     USE_BIAS = True
 
     ACTIVATION = 'sigmoid'  # TODO: try different activation fc
     SCALE_ACTIVATION = 4.9
 
-    FITNESS_THRESHOLD = 0.7 # TODO: - a solution is defined as having a fitness >= this fitness threshold;
-                        # is 1 for scaled ratings, 5 otherwise
+    POPULATION_SIZE = 0  # will be set below
+    NUMBER_OF_GENERATIONS = 0  # will be set below
 
-    sizes_to_try = [50, 100, 200, 500, 1000] #TODO: for pop and generations
-    POPULATION_SIZE = sizes_to_try[0]
-    NUMBER_OF_GENERATIONS = sizes_to_try[0]
     SPECIATION_THRESHOLD = 3.0
 
     CONNECTION_MUTATION_RATE = 0.80
@@ -147,6 +96,11 @@ class RecoSysConfig:
 
     targets = list(map(lambda x: autograd.Variable(torch.Tensor([x])), train_ratings['rating']))
 
+    @staticmethod
+    def set_global_var(index_population):
+        sizes_to_try = [20, 50, 100, 150, 200]
+        RecoSysConfig.NUMBER_OF_GENERATIONS = 1500
+        RecoSysConfig.POPULATION_SIZE = sizes_to_try[index_population]
 
     def fitness_fn(self, genome):
         fitness = 1*len(self.inputs)
@@ -156,27 +110,36 @@ class RecoSysConfig:
             input, target = input.to(self.DEVICE), target.to(self.DEVICE)
 
             pred = phenotype(input)
-            # print(f"PRED: {pred.data.numpy().astype(float)}")
-            # print(f"TARGETS: {target.data.numpy().astype(float)}")
             loss = np.sum(np.abs(pred.data.numpy().astype(float) - target.data.numpy().astype(float)))/len(target) # MAE
-            # print(f"LOSS: {loss}")
             fitness -= loss
 
         return fitness/len(self.inputs)
 
-    def get_preds_and_labels(self, genome):
+
+    def get_preds_and_labels(self, genome, generation_number):
         phenotype = FeedForwardNet(genome, self)
         phenotype.to(self.DEVICE)
-
-        predictions = []
-        labels = []
+        csv_path = r"C:\Users\laris\PycharmProjects\KaggleRS\experiments\predictions"
+        data = []
         for input, target in zip(self.inputs, self.targets):
             input, target = input.to(self.DEVICE), target.to(self.DEVICE)
 
-            predictions.append(float(phenotype(input)))
-            labels.append(float(target))
+            pred = float(phenotype(input))
+            target = float(target)
+            data.append([pred, target,
+                         self.scaler.inverse_transform(np.full((1, 1), pred))[0][0],
+                         self.scaler.inverse_transform(np.full((1, 1), target))[0][0]],)
 
-        return predictions, labels
+        pred_df = pd.DataFrame(data=data, columns=["pred_rating_scaled", "real_rating_scaled", "pred_rating",
+                                             "real_rating"])
+        pred_df.to_csv(f"{csv_path}/NEAT_predictions_gen_{generation_number}_g{self.NUMBER_OF_GENERATIONS}_p{self.POPULATION_SIZE}.csv", index=False)
+        # we log the number of generation where it stopped, the total number of generations and the population size
+
+        mae = (abs(pred_df['pred_rating'] - pred_df['real_rating'])).sum() / len(pred_df)
+        r2 = r2_score(pred_df['real_rating'], pred_df['pred_rating'])
+
+        return mae, r2
+
 
 
 
