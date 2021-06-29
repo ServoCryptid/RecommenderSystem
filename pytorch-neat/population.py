@@ -33,11 +33,9 @@ class Population:
     def run(self):
         last_fitness = []
         folder_path = r"C:\Users\laris\PycharmProjects\KaggleRS\experiments\overall_view"
-
+        acc_arr = []
         for generation in range(1, self.Config.NUMBER_OF_GENERATIONS + 1):
-            acc_arr = []
             start_time = time.time()
-
             # Get Fitness of Every Genome
             for genome in self.population:
                 genome.fitness = max(0, self.Config.fitness_fn(genome))
@@ -259,12 +257,4 @@ class Population:
         print('Maximum number of hidden nodes:', max_hidden_nodes)
         print('Minimum number of generations:', min_num_generations)
         print('Found minimal solution:', found_minimal_solution, 'times')
-
-        # logger.debug(f'Total Number of Solutions: {num_of_solutions}')
-        # logger.debug(f'Average Number of Hidden Nodes in a Solution {avg_num_hidden_nodes}')
-        # logger.debug(f'Solution found on average in: {avg_num_generations} generations')
-        # logger.debug(f'Minimum number of hidden nodes: {min_hidden_nodes}')
-        # logger.debug(f'Maximum number of hidden nodes: {max_hidden_nodes}')
-        # logger.debug(f'Minimum number of generations: {min_num_generations}')
-        # logger.debug(f'Found minimal solution:{found_minimal_solution} times')
 
