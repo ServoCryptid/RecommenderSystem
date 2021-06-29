@@ -2,15 +2,15 @@ import logging
 import random
 
 import numpy as np
-
+import pandas as pd
 import neat.utils as utils
 from neat.genotype.genome import Genome
 from neat.species import Species
 from neat.crossover import crossover
 from neat.mutation import mutate
-from multiprocessing import Pool
+import time
 
-
+from neat.visualize import draw_net
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class Population:
     __global_innovation_number = 0
     current_gen_innovation = []  # Can be reset after each generation according to paper
+    fitness_not_improved = 0
 
     def __init__(self, config):
         self.Config = config()
@@ -29,9 +30,14 @@ class Population:
         for genome in self.population:
             self.speciate(genome, 0)
 
-
     def run(self):
-        for generation in range(1, self.Config.NUMBER_OF_GENERATIONS):
+        last_fitness = []
+        folder_path = r"C:\Users\laris\PycharmProjects\KaggleRS\experiments\overall_view"
+
+        for generation in range(1, self.Config.NUMBER_OF_GENERATIONS + 1):
+            acc_arr = []
+            start_time = time.time()
+
             # Get Fitness of Every Genome
             for genome in self.population:
                 genome.fitness = max(0, self.Config.fitness_fn(genome))
@@ -51,6 +57,8 @@ class Population:
 
             min_fitness = min(all_fitnesses)
             max_fitness = max(all_fitnesses)
+
+            last_fitness.append(max_fitness)
 
             fit_range = max(1.0, (max_fitness-min_fitness))
             for species in remaining_species:
@@ -99,20 +107,22 @@ class Population:
             for genome in self.population:
                 self.speciate(genome, generation)
 
-            if best_genome.fitness >= self.Config.FITNESS_THRESHOLD:
-                self.Config.get_preds_and_labels(best_genome)
-                return best_genome, generation
+            if not self.fitness_improved(last_fitness):
+                mae, r2 = self.Config.get_preds_and_labels(best_genome, generation)
+                # return best_genome, generation, mae, r2  # TODO: uncomment this if you want early stopping
+                acc_arr.append([generation, self.Config.NUMBER_OF_GENERATIONS, self.Config.POPULATION_SIZE,
+                                mae, r2, "yes", time.time()-start_time])
+            else:
+                mae, r2 = self.Config.get_preds_and_labels(best_genome, generation)
+                acc_arr.append([generation, self.Config.NUMBER_OF_GENERATIONS, self.Config.POPULATION_SIZE,
+                                mae, r2, "no", time.time()-start_time])
 
-            if not fitness_improved(num_gen_to_wait):
-                return None, None
+            self.get_details_best_genome(generation, best_genome)
 
-            # Generation Stats
-            if self.Config.VERBOSE:
-                logger.info(f'Finished Generation {generation}')
-                logger.info(f'Best Genome Fitness: {best_genome.fitness}')
-                logger.info(f'Best Genome Length {len(best_genome.connection_genes)}\n')
-
-        return None, None
+        pd.DataFrame(data=acc_arr, columns=["generation", "num_generations", "num_population",
+                                            "mae", "r2", "fitness_improv", "time_seconds"]).to_csv(f"{folder_path}/{self.Config.NUMBER_OF_GENERATIONS}_"
+                                                                 f"p{self.Config.POPULATION_SIZE}")
+        return None, None, None, None
 
     def speciate(self, genome, generation):
         """
@@ -141,10 +151,8 @@ class Population:
         return [g for g in self.population if g.species == species_id]
 
     def set_initial_population(self):
-        # number_processes = 8
         pop = []
 
-        # for i in range(int(self.Config.POPULATION_SIZE/number_processes)):
         for i in range(int(self.Config.POPULATION_SIZE)):
             new_genome = Genome()
             inputs = []
@@ -191,9 +199,72 @@ class Population:
         Population.__global_innovation_number += 1
         return ret
 
-    def fitness_improved(num_gen_to_wait = 20):
+    def fitness_improved(self, fitness_arr, num_gen_to_wait=20):
         '''
         If fitness doesn't improve after a defined number of generations, end the process
         :return: True/False
         '''
+
+        improvement_value = 0.01
+
+        if len(fitness_arr) > 2:
+            diff = (fitness_arr[-1] - fitness_arr[-2])/fitness_arr[-2]
+            if np.abs(diff) > improvement_value:
+                Population.fitness_not_improved = 0
+            else:
+                Population.fitness_not_improved += 1
+
+            print(f"Fitness arr: {fitness_arr}")
+            print(f"Last:{fitness_arr[-1]}; {num_gen_to_wait} element: {fitness_arr[-2]}")
+
+        print(f"FITNESS IMPROVEMENT COUNT: {Population.fitness_not_improved}")
+        if Population.fitness_not_improved == num_gen_to_wait:
+            return False
+
+        return True
+
+    def get_details_best_genome(self, generation, solution):
+        "Get details about the best genome from each generation"
+
+        num_of_solutions = 0
+
+        avg_num_hidden_nodes = 0
+        min_hidden_nodes = 100000
+        max_hidden_nodes = 0
+        found_minimal_solution = 0
+
+        avg_num_generations = 0
+        min_num_generations = 100000
+
+        avg_num_generations = ((avg_num_generations * num_of_solutions) + generation) / (num_of_solutions + 1)
+        min_num_generations = min(generation, min_num_generations)
+
+        num_hidden_nodes = len([n for n in solution.node_genes if n.type == 'hidden'])
+        avg_num_hidden_nodes = ((avg_num_hidden_nodes * num_of_solutions) + num_hidden_nodes) / (num_of_solutions + 1)
+        min_hidden_nodes = min(num_hidden_nodes, min_hidden_nodes)
+        max_hidden_nodes = max(num_hidden_nodes, max_hidden_nodes)
+
+        if num_hidden_nodes == 1:
+            found_minimal_solution += 1
+
+        num_of_solutions += 1
+        draw_net(solution, filename='./images/solution-' + f"{generation}_{self.Config.NUMBER_OF_GENERATIONS}_"
+                                                                 f"p{self.Config.POPULATION_SIZE}",
+                 show_disabled=True)
+
+        print('Total Number of Solutions: ', num_of_solutions)
+        print('Average Number of Hidden Nodes in a Solution', avg_num_hidden_nodes)
+        print('Solution found on average in:', avg_num_generations, 'generations')
+        print('Minimum number of hidden nodes:', min_hidden_nodes)
+        print('Maximum number of hidden nodes:', max_hidden_nodes)
+        print('Minimum number of generations:', min_num_generations)
+        print('Found minimal solution:', found_minimal_solution, 'times')
+
+        # logger.debug(f'Total Number of Solutions: {num_of_solutions}')
+        # logger.debug(f'Average Number of Hidden Nodes in a Solution {avg_num_hidden_nodes}')
+        # logger.debug(f'Solution found on average in: {avg_num_generations} generations')
+        # logger.debug(f'Minimum number of hidden nodes: {min_hidden_nodes}')
+        # logger.debug(f'Maximum number of hidden nodes: {max_hidden_nodes}')
+        # logger.debug(f'Minimum number of generations: {min_num_generations}')
+        # logger.debug(f'Found minimal solution:{found_minimal_solution} times')
 
