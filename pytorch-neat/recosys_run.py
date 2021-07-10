@@ -13,10 +13,11 @@ def run_neat(index_population_size):
 
 if __name__ == '__main__':
     start_time = time.time()
-    number_processes = 5  # 8 - max number
+    number_processes = 1 #5 # 8 - max number
 
     with Pool(number_processes) as pool:  # run all the desired lengths from sizes_to_try list
-        pool.map(run_neat, range(5))
+        # pool.map(run_neat, range(5)) TODO: uncomment this
+        pool.map(run_neat, range(1))
 
 
 

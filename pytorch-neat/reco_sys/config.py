@@ -52,7 +52,8 @@ class RecoSysConfig:
     embed_dim = 50  # current emb dim used
 
     model = NCF(scaler, embed_dim, num_users, num_items, train_ratings, all_movieIds)
-    model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e25_emb_size50.pth'))
+    # model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e25_emb_size50.pth'))
+    model.load_state_dict(torch.load(r'C:\Users\laris\PycharmProjects\KaggleRS\saved_weights\weights_only_e25_emb_size20_untrained.pth'))
 
     # reload pretrained embedding weights
     for name, param in model.named_parameters():
@@ -99,8 +100,8 @@ class RecoSysConfig:
     @staticmethod
     def set_global_var(index_population):
         sizes_to_try = [20, 50, 100, 150, 200]
-        RecoSysConfig.NUMBER_OF_GENERATIONS = 1500
-        RecoSysConfig.POPULATION_SIZE = sizes_to_try[index_population]
+        RecoSysConfig.NUMBER_OF_GENERATIONS = 400 #1500
+        RecoSysConfig.POPULATION_SIZE = 20 #sizes_to_try[index_population] TODO: uncomment this
 
     def fitness_fn(self, genome):
         fitness = 1*len(self.inputs)
